@@ -1,0 +1,127 @@
+# ai_server.py (Corrected)
+# This script runs a FastAPI server with a WebSocket endpoint for streaming image generation.
+# This version fixes the 'coroutine was never awaited' error.
+# --- Dependencies ---
+# pip install "fastapi[all]" uvicorn diffusers transformers accelerate safetensors torch Pillow
+
+import torch
+import asyncio
+import base64
+import io
+import os
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from diffusers import StableDiffusionXLPipeline, DiffusionPipeline, DPMSolverMultistepScheduler
+
+# --- 1. Server and Model Setup ---
+
+app = FastAPI()
+
+print("Loading model... This may take a moment.")
+if torch.backends.mps.is_available():
+    device = torch.device("mps")
+    torch_dtype = torch.float16 
+    print("Using MPS (Apple Silicon GPU) with float16 precision for stability.")
+    variant = "fp16"
+else:
+    device = torch.device("cpu")
+    torch_dtype = torch.float32
+    print("MPS not available, using CPU with float32 precision.")
+    variant = "fp32"
+
+pipeline = DiffusionPipeline.from_pretrained(
+    "stable-diffusion-v1-5/stable-diffusion-v1-5",
+    torch_dtype=torch_dtype,
+    use_safetensors=True,
+    variant=variant,
+).to(device)
+
+# model_path = "./sd_xl_base_1.0.safetensors"
+
+# pipeline = StableDiffusionXLPipeline.from_single_file(
+#     model_path,
+#     torch_dtype=torch_dtype,
+#     use_safetensors=True,
+#     variant=variant
+# ).to(device)
+
+print("Loading and fusing Hyper-SD LoRA for SDv1.5...")
+repo_id = "ByteDance/Hyper-SD"
+lora_file = "Hyper-SD15-8steps-CFG-lora.safetensors"
+
+# We provide the repository ID first, then the specific filename within that repo.
+pipeline.load_lora_weights(repo_id, weight_name=lora_file)
+
+pipeline.fuse_lora()
+print("Hyper-SD LoRA for SDv1.5 fused successfully.")
+
+
+
+pipeline.scheduler = DPMSolverMultistepScheduler.from_config(pipeline.scheduler.config)
+print("Model loaded and configured with DPMSolverMultistepScheduler.")
+
+
+
+# --- 2. WebSocket Endpoint for Image Generation ---
+
+@app.websocket("/ws/generate")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    print("Client connected.")
+    
+    # Get the current asyncio event loop to schedule tasks from another thread.
+    main_loop = asyncio.get_running_loop()
+
+    try:
+        while True:
+            prompt = await websocket.receive_text()
+            print(f"Received prompt: '{prompt}'")
+
+            # --- 3. The Corrected Callback Function ---
+            # This is now a regular (synchronous) function, not async.
+            def stream_intermediate_image(pipe, step, timestep, callback_kwargs):
+                # Decode the latent to a PIL Image
+                latents = callback_kwargs["latents"]
+                image = pipe.image_processor.postprocess(
+                    pipe.vae.decode(latents / pipe.vae.config.scaling_factor, return_dict=False)[0]
+                )[0]
+
+                # Convert the PIL Image to bytes in memory
+                buffer = io.BytesIO()
+                image.save(buffer, format="PNG")
+                img_bytes = buffer.getvalue()
+
+                # Encode the bytes to a Base64 string
+                img_base64 = base64.b64encode(img_bytes).decode('utf-8')
+
+                # --- THE FIX ---
+                # Use asyncio.run_coroutine_threadsafe to schedule the async send
+                # operation on the main event loop from this synchronous thread.
+                asyncio.run_coroutine_threadsafe(
+                    websocket.send_text(img_base64),
+                    main_loop
+                )
+                
+                return callback_kwargs
+
+            # Run the synchronous pipeline in a separate thread.
+            # This no longer blocks the server.
+            await asyncio.to_thread(
+                pipeline,
+                prompt=prompt,
+                num_inference_steps=8,
+                guidance_scale=5.0,
+                callback_on_step_end_steps=1,
+                callback_on_step_end=stream_intermediate_image,
+            )
+
+            # Signal that the generation is complete using the same thread-safe method.
+            # We wait for this one to finish to ensure the message is sent before we loop.
+            await websocket.send_text("generation_complete")
+            print("Generation complete. Sent end signal.")
+
+    except WebSocketDisconnect:
+        print("Client disconnected.")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        await websocket.close(code=1011, reason=str(e))
