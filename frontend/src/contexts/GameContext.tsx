@@ -27,55 +27,66 @@ const GameContext = createContext<GameContextType | undefined>(undefined);
 
 // The provider component that will wrap our app
 export const GameProvider = ({ children }: { children: ReactNode }) => {
-  const [gameState, setGameState] = useState<GameState>(initialState);
-  const websocket = useRef<WebSocket | null>(null);
-  const navigate = useNavigate();
-
-  const handleServerMessage = (event: MessageEvent) => {
-    const message = JSON.parse(event.data);
-    console.log('Received message:', message);
-
-    switch (message.type) {
-      case 'player_update':
-        setGameState(prev => ({ ...prev, players: message.payload.players }));
-        break;
-      case 'game_started':
-        setGameState(prev => ({ ...prev, gameState: 'IN_GAME', chatMessages: [] }));
-        navigate(`/game/${gameState.roomId}`);
-        break;
-      case 'new_turn':
-        setGameState(prev => ({
-          ...prev,
-          gameState: 'IN_GAME',
-          currentRound: message.payload.round,
-          totalRounds: message.payload.totalRounds,
-          timeLeft: message.payload.timeLeft,
-          promptHint: message.payload.promptHint,
-          currentImageB64: message.payload.imageBase64,
-          roundWinner: null,
-          correctPrompt: null,
-        }));
-        break;
-      case 'new_guess':
-        setGameState(prev => ({
-          ...prev,
-          chatMessages: [...prev.chatMessages, message.payload],
-        }));
-        break;
-      case 'round_end':
-        setGameState(prev => ({
-          ...prev,
-          gameState: 'POST_ROUND',
-          roundWinner: message.payload.winner,
-          correctPrompt: message.payload.correctPrompt,
-          roundEndReason: message.payload.reason,
-          players: message.payload.scores, // Update scores
-        }));
-        break;
-      default:
-        console.warn('Unknown message type:', message.type);
-    }
-  };
+    const [gameState, setGameState] = useState<GameState>(initialState);
+    const websocket = useRef<WebSocket | null>(null);
+    const navigate = useNavigate();
+  
+    const handleServerMessage = (event: MessageEvent) => {
+      const message = JSON.parse(event.data);
+      console.log('Received message:', message);
+  
+      switch (message.type) {
+        case 'player_update':
+          setGameState(prev => ({ ...prev, players: message.payload.players }));
+          break;
+        case 'game_started':
+          setGameState(prev => ({ ...prev, gameState: 'IN_GAME', chatMessages: [] }));
+          navigate(`/game/${gameState.roomId}`);
+          break;
+        case 'new_turn':
+          setGameState(prev => ({
+            ...prev,
+            gameState: 'IN_GAME',
+            currentRound: message.payload.round,
+            totalRounds: message.payload.totalRounds,
+            timeLeft: message.payload.timeLeft,
+            promptHint: message.payload.promptHint,
+            // Set the image, which might be null initially
+            currentImageB64: message.payload.imageBase64, 
+            roundWinner: null,
+            correctPrompt: null,
+          }));
+          break;
+        
+        // --- ADD THIS NEW CASE ---
+        case 'image_update':
+          setGameState(prev => ({
+            ...prev,
+            currentImageB64: message.payload.imageBase64,
+          }));
+          break;
+  
+        case 'new_guess':
+          setGameState(prev => ({
+            ...prev,
+            chatMessages: [...prev.chatMessages, message.payload],
+          }));
+          break;
+        case 'round_end':
+          setGameState(prev => ({
+            ...prev,
+            gameState: 'POST_ROUND',
+            roundWinner: message.payload.winner,
+            correctPrompt: message.payload.correctPrompt,
+            roundEndReason: message.payload.reason,
+            players: message.payload.scores,
+          }));
+          break;
+        default:
+          console.warn('Unknown message type:', message.type);
+      }
+    };
+  
 
   const connect = (roomId: string, playerName: string) => {
     if (websocket.current) return; // Already connected
