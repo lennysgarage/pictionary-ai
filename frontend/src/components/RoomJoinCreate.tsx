@@ -1,6 +1,5 @@
 // src/components/RoomJoinCreate.tsx
 import { Box, Button, Input, VStack, Text, HStack } from "@chakra-ui/react";
-import { Toaster, toaster } from "@/components/ui/toaster"
 import { useState } from "react";
 import { useGame } from "@/contexts/GameContext"; // Import our custom hook
 
@@ -11,14 +10,6 @@ export default function RoomJoinCreate() {
 
   const handleConnect = (isCreating: boolean) => {
     const roomToJoin = isCreating ? Math.random().toString(36).substring(2, 8) : roomId;
-    if (!playerName.trim()) {
-      toaster.create({ title: "Please enter your name.", closable: true });
-      return;
-    }
-    if (!roomToJoin.trim()) {
-      toaster.create({ title: "Please enter a Room ID to join.", closable: true });
-      return;
-    }
     connect(roomToJoin, playerName);
   };
 
@@ -39,7 +30,7 @@ export default function RoomJoinCreate() {
         <Button colorScheme="orange" size="lg" width="100%" onClick={() => handleConnect(true)} disabled={!playerName.trim()}>
           Create a New Room
         </Button>
-        <Text color="gray.400">OR</Text>
+        <Text color="gray.400" fontWeight="bold">OR</Text>
         <HStack width="100%">
           <Input
             value={roomId}

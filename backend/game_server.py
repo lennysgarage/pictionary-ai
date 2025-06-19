@@ -20,11 +20,13 @@ PROMPTS = [
     "A photorealistic portrait of a cat wearing a monocle",
     "A squirrel in the style of picasso",
     "Darth vader playing the drums",
-    "A city skyline made of giant books",
     "An astronaut playing guitar on the moon",
     "Yoda playing the guitar",
     "An image of a crow sitting in a tree",
-    "very long limo"
+    "very long limo",
+    "happy software developer",
+    "pug pikachu"
+    "a boat on a river"
 ]
 
 # --- GameRoom Class (Main Changes are Here) ---

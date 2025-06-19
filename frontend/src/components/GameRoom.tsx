@@ -1,18 +1,18 @@
 // src/components/GameRoom.tsx
-import { Box, Button, VStack, Text, Input, HStack, Grid, GridItem, Heading, Progress, Flex, Spacer, Image, Dialog } from "@chakra-ui/react";
+import { Box, Button, VStack, Text, Input, HStack, Flex, Heading, Image } from "@chakra-ui/react";
 import { useState, useEffect } from "react";
 import { useGame } from "@/contexts/GameContext";
+import Footer from "./Footer";
 
 const PLACEHOLDER_IMAGE = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 
 export default function GameRoom() {
   const { gameState, sendMessage, disconnect } = useGame();
-  const { players, chatMessages, currentRound, totalRounds, timeLeft, promptHint, currentImageB64, roundWinner, correctPrompt, roundEndReason, gameState: roomState } = gameState;
+  const { players, currentRound, totalRounds, timeLeft, promptHint, currentImageB64, roundWinner, correctPrompt, roundEndReason, gameState: roomState } = gameState;
 
   const [guess, setGuess] = useState("");
   const [timer, setTimer] = useState(timeLeft);
 
-  // Client-side timer for smoother UI
   useEffect(() => {
     setTimer(timeLeft);
     const interval = setInterval(() => {
@@ -29,57 +29,74 @@ export default function GameRoom() {
   };
 
   const sortedPlayers = [...players].sort((a, b) => b.score - a.score);
+  const topScore = sortedPlayers[0]?.score || 1;
 
   return (
-    <>
-      <Grid templateAreas={`"header header header" "players image chat" "players guess chat"`} gridTemplateRows={'auto 1fr auto'} gridTemplateColumns={'250px 1fr 300px'} h="calc(100vh - 160px)" w="100%" gap='4'>
-        {/* HEADER AREA */}
-        <GridItem area={'header'} bg="gray.700" p={2} borderRadius="md">
-          <Flex align="center">
-            <Box w="120px"><Text>Round {currentRound}/{totalRounds}</Text></Box>
-            <Spacer />
-            <Heading size="lg" color="yellow.400">{promptHint}</Heading>
-            <Spacer />
-            <Box w="120px" textAlign="right"><Text fontSize="2xl" fontWeight="bold">{timer}s</Text></Box>
-          </Flex>
-          {/* <Progress value={(timer / timeLeft) * 100} colorScheme="orange" size="sm" mt={1} /> */}
-        </GridItem>
+    <Flex direction="column" minH="100vh" w="100%" bg="gray.900">
+      {/* HEADER */}
+      <Box as="header" w="100%" py={2} px={6} bg="gray.800" borderRadius="md" mt={4} mb={2} boxShadow="md">
+        <Flex align="center" justify="space-between">
+          <Box bg="blue.700" px={4} py={1} borderRadius="md">
+            <Text color="white" fontWeight="bold">Round {currentRound}/{totalRounds} - {timer.toString().padStart(2, '0')}s</Text>
+          </Box>
+          <Button colorScheme="red" variant="outline" onClick={disconnect}>Leave</Button>
+        </Flex>
+      </Box>
 
-        {/* PLAYER LIST / SCOREBOARD */}
-        <GridItem area={'players'} bg="gray.800" p={4} borderRadius="md"><VStack align="stretch" gap={3}><Heading size="md" mb={2}>Scoreboard</Heading>{sortedPlayers.map((p, i) => (<Flex key={p.name} justify="space-between" align="center" bg="gray.700" p={2} borderRadius="sm"><Text fontWeight="bold">{i + 1}. {p.name}</Text><Text color="orange.300">{p.score}</Text></Flex>))}</VStack></GridItem>
+      {/* MAIN CONTENT */}
+      <Flex flex={1} w="100%" maxW="1100px" mx="auto" gap={8}>
+        {/* IMAGE LEFT */}
+        <Box flex="1.2" bg="black" borderRadius="md" display="flex" alignItems="center" justifyContent="center" minH="420px" maxH="520px" my={4}>
+          <Image src={currentImageB64 || PLACEHOLDER_IMAGE} alt="AI-generated image" objectFit="contain" maxH="95%" maxW="95%" borderRadius="md" />
+        </Box>
 
-        {/* AI IMAGE DISPLAY */}
-        <GridItem area={'image'} bg="black" borderRadius="md" display="flex" alignItems="center" justifyContent="center" p={2}><Image src={currentImageB64 || PLACEHOLDER_IMAGE} alt="AI-generated image" objectFit="contain" maxH="100%" maxW="100%" /></GridItem>
+        {/* RIGHT SIDE: SCOREBOARD + GUESS */}
+        <Flex flex="1" direction="column" gap={6} justify="flex-start" mt={4}>
+          {/* SCOREBOARD */}
+          <Box bg="gray.800" borderRadius="md" p={4} boxShadow="md">
+            <Heading size="sm" mb={3} color="blue.200">Scoreboard</Heading>
+            <VStack align="stretch" gap={2}>
+              {sortedPlayers.map((p, i) => {
+                const percent = topScore ? Math.round((p.score / topScore) * 100) : 0;
+                return (
+                  <Flex key={p.name} align="center" justify="space-between" bg="gray.700" p={2} borderRadius="sm" borderLeftWidth={3} borderLeftColor={i === 0 ? 'yellow.400' : 'gray.600'}>
+                    <Text fontWeight="bold">{i + 1}st: {p.name}</Text>
+                    <Text color="blue.200" fontSize="sm">{percent}%</Text>
+                    <Text color="orange.300" fontWeight="bold">({p.score})</Text>
+                  </Flex>
+                );
+              })}
+            </VStack>
+          </Box>
 
-        {/* GUESS INPUT AREA */}
-        <GridItem area={'guess'}><HStack as="form" onSubmit={handleGuessSubmit}><Input placeholder="Guess the prompt..." value={guess} onChange={(e) => setGuess(e.target.value)} size="lg" /><Button type="submit" colorScheme="green" size="lg" disabled={!guess.trim()}>Guess</Button></HStack></GridItem>
+          {/* GUESS INPUT */}
+          <Box bg="gray.700" borderRadius="md" p={4}>
+            <form onSubmit={handleGuessSubmit}>
+              <HStack>
+                <Text color="orange.200" fontWeight="bold">Guess:</Text>
+                <Input placeholder="Type your guess..." value={guess} onChange={(e) => setGuess(e.target.value)} size="md" bg="white" color="black" _placeholder={{ color: 'gray.500' }} />
+                <Button type="submit" colorScheme="orange" disabled={!guess.trim()}>Guess</Button>
+              </HStack>
+            </form>
+          </Box>
+        </Flex>
+      </Flex>
 
-        {/* CHAT & GUESS HISTORY */}
-        <GridItem area={'chat'} bg="gray.800" p={4} borderRadius="md" display="flex" flexDirection="column">
-          <Heading size="md" mb={2}>Guess History</Heading>
-          <VStack flex="1" overflowY="auto" align="stretch" gap={2} pr={2}>
-            {chatMessages.map((chat, index) => (<Box key={index}><Text as="span" fontWeight="bold" color="orange.200">{chat.player}: </Text>{chat.message}</Box>))}
-          </VStack>
-          <Button colorScheme="red" mt={4} onClick={disconnect}>Leave Game</Button>
-        </GridItem>
-      </Grid>
+      {/* Round End Message */}
+      {roomState === 'POST_ROUND' && (
+        <Box position="fixed" top="0" left="0" w="100vw" h="100vh" bg="blackAlpha.700" display="flex" alignItems="center" justifyContent="center" zIndex={1000}>
+          <Box bg="gray.700" p={8} borderRadius="lg" boxShadow="2xl" minW="340px">
+            <Heading size="md" mb={2} color="yellow.300">{roundWinner ? `${roundWinner} Wins!` : "Time's Up!"}</Heading>
+            <Text fontSize="lg" mb={2}>{roundEndReason}</Text>
+            <Text>The correct prompt was:</Text>
+            <Text fontWeight="bold" color="yellow.400" textAlign="center" mb={4}>{correctPrompt}</Text>
+            <Text color="gray.300">Next round starting soon...</Text>
+          </Box>
+        </Box>
+      )}
 
-      {/* Round End Dialog */}
-      <Dialog.Root open={roomState === 'POST_ROUND'}>
-          <Dialog.Content bg="gray.700">
-            <Dialog.Header>{roundWinner ? `${roundWinner} Wins!` : "Time's Up!"}</Dialog.Header>
-            <Dialog.Body>
-              <VStack>
-                <Text fontSize="lg">{roundEndReason}</Text>
-                <Text>The correct prompt was:</Text>
-                <Text fontWeight="bold" color="yellow.400" textAlign="center">{correctPrompt}</Text>
-              </VStack>
-            </Dialog.Body>
-            <Dialog.Footer>
-              <Text>Next round starting soon...</Text>
-            </Dialog.Footer>
-          </Dialog.Content>
-      </Dialog.Root>
-    </>
+      {/* FOOTER */}
+      <Footer />
+    </Flex>
   );
 }
