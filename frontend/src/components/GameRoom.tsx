@@ -39,7 +39,7 @@ export default function GameRoom() {
           <Box bg="blue.700" px={4} py={1} borderRadius="md">
             <Text color="white" fontWeight="bold">Round {currentRound}/{totalRounds} - {timer.toString().padStart(2, '0')}s</Text>
           </Box>
-          <Button colorScheme="red" variant="outline" onClick={disconnect}>Leave</Button>
+          <Button variant="surface" colorPalette="red" onClick={disconnect}>Leave</Button>
         </Flex>
       </Box>
 
@@ -83,7 +83,7 @@ export default function GameRoom() {
       </Flex>
 
       {/* Round End Message */}
-      {roomState === 'POST_ROUND' && (
+      {/* {roomState === 'POST_ROUND' && (
         <Box position="fixed" top="0" left="0" w="100vw" h="100vh" bg="blackAlpha.700" display="flex" alignItems="center" justifyContent="center" zIndex={1000}>
           <Box bg="gray.700" p={8} borderRadius="lg" boxShadow="2xl" minW="340px">
             <Heading size="md" mb={2} color="yellow.300">{roundWinner ? `${roundWinner} Wins!` : "Time's Up!"}</Heading>
@@ -93,7 +93,7 @@ export default function GameRoom() {
             <Text color="gray.300">Next round starting soon...</Text>
           </Box>
         </Box>
-      )}
+      )} */}
 
       {/* FOOTER */}
       <Footer />

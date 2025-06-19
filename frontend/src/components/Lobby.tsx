@@ -1,9 +1,9 @@
 // src/components/Lobby.tsx
-import { Box, Button, VStack, Text, Grid, Icon, Heading } from "@chakra-ui/react";
+import { Box, Button, VStack, Text, Grid, Icon, Heading, HStack, Clipboard } from "@chakra-ui/react";
+import { Toaster, toaster } from "@/components/ui/toaster";
 import { FaUserCircle, FaCrown } from "react-icons/fa";
 import { useGame } from "@/contexts/GameContext";
 import { useEffect } from "react";
-import { Toaster, toaster } from "@/components/ui/toaster";
 import Header from "./Header";
 
 export default function Lobby() {
@@ -13,12 +13,14 @@ export default function Lobby() {
     const isHost = players.find(p => p.name === playerName)?.isHost || false;
 
     useEffect(() => {
-        toaster.create({
-            title: 'Joined Lobby!',
-            description: `Room ID: ${roomId}. Share it with your friends!`,
-            duration: 5000,
-            closable: true,
-        });
+        if (roomId) {
+            toaster.create({
+                title: 'Joined Lobby!',
+                description: `Room ID: ${roomId}. Share it with your friends!`,
+                duration: 5000,
+                closable: true,
+            });
+        }
     }, [roomId]);
 
     const handleStartGame = () => {
@@ -32,7 +34,16 @@ export default function Lobby() {
                 <Toaster />
                 <VStack gap={6}>
                     <Heading color="orange.300">Lobby</Heading>
-                    <Text fontSize="lg">Room ID: <Text as="span" fontWeight="bold" color="yellow.400">{roomId}</Text></Text>
+                    <HStack>
+                        <Text fontSize="lg">Room ID: <Text as="span" fontWeight="bold" color="yellow.400">{roomId}</Text></Text>
+                        <Clipboard.Root value={roomId ? roomId : undefined}>
+                            <Clipboard.Trigger>
+                                <Button size="xs" colorScheme="gray" variant="subtle" _hover={{ bg: "gray.600" }}>
+                                    <Clipboard.Indicator />
+                                </Button>
+                            </Clipboard.Trigger>
+                        </Clipboard.Root>
+                    </HStack>
                     <Grid templateColumns="repeat(4, 1fr)" gap={6} w="100%" pt={4}>
                         {players.map((player) => (
                             <VStack key={player.name} p={4} bg="gray.600" borderRadius="md" boxShadow="md" position="relative">
