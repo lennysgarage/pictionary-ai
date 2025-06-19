@@ -14,7 +14,7 @@ from fastapi.responses import HTMLResponse
 
 # --- Configuration ---
 AI_SERVER_URI = "ws://localhost:8000/ws/generate"
-TOTAL_STEPS = 8 # The number of steps the AI server is configured to run
+TOTAL_STEPS = 12 # The number of steps the AI server is configured to run
 
 # --- FastAPI App Setup ---
 app = FastAPI()

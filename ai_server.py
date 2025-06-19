@@ -47,7 +47,7 @@ pipeline = DiffusionPipeline.from_pretrained(
 
 print("Loading and fusing Hyper-SD LoRA for SDv1.5...")
 repo_id = "ByteDance/Hyper-SD"
-lora_file = "Hyper-SD15-8steps-CFG-lora.safetensors"
+lora_file = "Hyper-SD15-12steps-CFG-lora.safetensors"
 
 # We provide the repository ID first, then the specific filename within that repo.
 pipeline.load_lora_weights(repo_id, weight_name=lora_file)
@@ -109,7 +109,7 @@ async def websocket_endpoint(websocket: WebSocket):
             await asyncio.to_thread(
                 pipeline,
                 prompt=prompt,
-                num_inference_steps=8,
+                num_inference_steps=12,
                 guidance_scale=5.0,
                 callback_on_step_end_steps=1,
                 callback_on_step_end=stream_intermediate_image,
