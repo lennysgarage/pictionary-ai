@@ -1,9 +1,3 @@
-# ai_server.py (Corrected)
-# This script runs a FastAPI server with a WebSocket endpoint for streaming image generation.
-# This version fixes the 'coroutine was never awaited' error.
-# --- Dependencies ---
-# pip install "fastapi[all]" uvicorn diffusers transformers accelerate safetensors torch Pillow
-
 import torch
 import asyncio
 import base64
@@ -12,7 +6,7 @@ import os
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel # NEW: For creating the request body model
-from diffusers import StableDiffusionXLPipeline, DiffusionPipeline, DPMSolverMultistepScheduler
+from diffusers import LCMScheduler, AutoPipelineForText2Image
 
 from sentence_transformers import SentenceTransformer, util
 
@@ -38,36 +32,22 @@ else:
     print("MPS not available, using CPU with float32 precision.")
     variant = "fp32"
 
-pipeline = DiffusionPipeline.from_pretrained(
-    "stable-diffusion-v1-5/stable-diffusion-v1-5",
+pipeline = AutoPipelineForText2Image.from_pretrained(
+    "stable-diffusion-v1-5/stable-diffusion-v1-5", 
     torch_dtype=torch_dtype,
-    use_safetensors=True,
     variant=variant,
+    use_safetensors=True,
 ).to(device)
 
-# model_path = "./sd_xl_base_1.0.safetensors"
 
-# pipeline = StableDiffusionXLPipeline.from_single_file(
-#     model_path,
-#     torch_dtype=torch_dtype,
-#     use_safetensors=True,
-#     variant=variant
-# ).to(device)
+pipeline.scheduler = LCMScheduler.from_config(pipeline.scheduler.config)
+print("Model loaded and configured with LCMScheduler.")
 
-print("Loading and fusing Hyper-SD LoRA for SDv1.5...")
-repo_id = "ByteDance/Hyper-SD"
-lora_file = "Hyper-SD15-12steps-CFG-lora.safetensors"
-
-# We provide the repository ID first, then the specific filename within that repo.
-pipeline.load_lora_weights(repo_id, weight_name=lora_file)
+print("Loading and fusing LoRA for SDv1.5...")
+pipeline.load_lora_weights("latent-consistency/lcm-lora-sdv1-5")
 
 pipeline.fuse_lora()
-print("Hyper-SD LoRA for SDv1.5 fused successfully.")
-
-
-
-pipeline.scheduler = DPMSolverMultistepScheduler.from_config(pipeline.scheduler.config)
-print("Model loaded and configured with DPMSolverMultistepScheduler.")
+print("LoRA for SDv1.5 fused successfully.")
 
 print("Loading similarity scoring model...")
 similarity_model = SentenceTransformer('all-MiniLM-L6-v2', device=device)
@@ -145,8 +125,8 @@ async def websocket_endpoint(websocket: WebSocket):
             await asyncio.to_thread(
                 pipeline,
                 prompt=prompt,
-                num_inference_steps=12,
-                guidance_scale=5.0,
+                num_inference_steps=4,
+                guidance_scale=0,
                 callback_on_step_end_steps=1,
                 callback_on_step_end=stream_intermediate_image,
             )

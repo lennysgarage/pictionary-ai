@@ -49,6 +49,7 @@ PROMPTS = [
     "minecraft",
     "Mad max and dinosaur from jurassic park",
     "majestic royal tall ship on a calm sea",
+    "Astronauts in a jungle, cold color palette"
 ]
 
 # --- GameRoom Class (Main Changes are Here) ---
