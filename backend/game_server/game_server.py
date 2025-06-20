@@ -9,7 +9,7 @@ import httpx
 
 
 # --- Configuration & Prompts (No changes here) ---
-AI_SERVER_URL= os.environ.get("AI_SERVER_URL", "ws://localhost:8000/ws/generate")
+AI_SERVER_URL = os.environ.get("AI_SERVER_URL", "ws://localhost:8000/ws/generate")
 AI_SCORING_URL = os.environ.get("AI_SCORING_URL", "http://localhost:8000/score/similarity")
 
 print(f"AI_SERVER_URL: {AI_SERVER_URL}")
@@ -166,7 +166,7 @@ class GameRoom:
     async def run_image_generation_and_broadcast(self):
         """Connects to AI server and broadcasts each image chunk as it arrives."""
         try:
-            async with websockets.connect(AI_SERVER_URI) as ai_websocket:
+            async with websockets.connect(AI_SERVER_URL) as ai_websocket:
                 await ai_websocket.send(self.current_prompt)
                 
                 while True:
