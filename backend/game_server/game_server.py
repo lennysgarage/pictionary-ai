@@ -1,20 +1,19 @@
-# game_server.py
-# Updated to stream image generation progress to all clients in a room.
-
 import asyncio
 import websockets
-import json
+import os
 import random
-import time # NEW: Import the time module
+import time
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from typing import Dict, List, Optional
-
+from typing import Dict, Optional
 import httpx
 
 
 # --- Configuration & Prompts (No changes here) ---
-AI_SERVER_URI = "ws://localhost:8000/ws/generate"
-AI_SCORING_URL = "http://localhost:8000/score/similarity"
+AI_SERVER_URL= os.environ.get("AI_SERVER_URL", "ws://localhost:8000/ws/generate")
+AI_SCORING_URL = os.environ.get("AI_SCORING_URL", "http://localhost:8000/score/similarity")
+
+print(f"AI_SERVER_URL: {AI_SERVER_URL}")
+print(f"AI_SCORING_URL: {AI_SCORING_URL}")
 
 GAME_CONFIG = {
     "ROUND_DURATION_S": 30,
@@ -281,7 +280,6 @@ class GameRoom:
                 "scores": [{"name": name, "score": self.scores[name]} for name in self.players]
             }
         })
-        print("we are here")
 
 # --- ConnectionManager and FastAPI App (No changes here) ---
 class ConnectionManager:
