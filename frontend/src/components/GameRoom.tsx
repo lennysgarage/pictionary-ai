@@ -8,7 +8,7 @@ const PLACEHOLDER_IMAGE = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAA
 
 export default function GameRoom() {
   const { gameState, sendMessage, disconnect } = useGame();
-  const { players, currentRound, totalRounds, timeLeft, promptHint, currentImageB64, correctPrompt, similarity, gameState: roomState } = gameState;
+  const { players, currentRound, totalRounds, timeLeft, currentImageB64, correctPrompt, similarity, gameState: roomState } = gameState;
 
   const [guess, setGuess] = useState("");
   const [timer, setTimer] = useState(timeLeft);

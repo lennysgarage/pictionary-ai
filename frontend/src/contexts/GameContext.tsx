@@ -3,7 +3,7 @@ import { createContext, useContext, useState, useRef, ReactNode } from 'react';
 import { GameState, GameContextType } from '@/types';
 import { useNavigate } from 'react-router-dom';
 
-const GAME_SERVER_URL = 'ws://localhost:8001/ws/game'; // Your game server URL
+const GAME_SERVER_URL = process.env.GAME_SERVER_URL; // Your game server URL
 
 // Initial state for the game
 const initialState: GameState = {
