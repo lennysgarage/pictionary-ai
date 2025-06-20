@@ -76,9 +76,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           setGameState(prev => ({
             ...prev,
             gameState: 'POST_ROUND',
-            roundWinner: message.payload.winner,
             correctPrompt: message.payload.correctPrompt,
-            roundEndReason: message.payload.reason,
             players: message.payload.scores,
           }));
           break;

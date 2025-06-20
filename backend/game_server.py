@@ -20,13 +20,13 @@ PROMPTS = [
     "A photorealistic portrait of a cat wearing a monocle",
     "A squirrel in the style of picasso",
     "Darth vader playing the drums",
-    "An astronaut playing guitar on the moon",
+    "An astronaut playing a guitar on the moon",
     "Yoda playing the guitar",
     "An image of a crow sitting in a tree",
     "very long limo",
     "happy software developer",
-    "pug pikachu"
-    "a boat on a river"
+    "pug pikachu",
+    "A boat down a river"
 ]
 
 # --- GameRoom Class (Main Changes are Here) ---
@@ -103,7 +103,7 @@ class GameRoom:
             self.game_loop_task = asyncio.create_task(self.run_game_loop())
 
     async def run_game_loop(self):
-        for round_num in range(1, len(PROMPTS) + 1):
+        for round_num in range(1, 10): # at most 10 rounds
             if not self.players:
                 break
             await self.start_round(round_num)
@@ -114,6 +114,7 @@ class GameRoom:
 
     async def start_round(self, round_num: int):
         """Initializes a round, sends initial data, THEN starts the image stream."""
+        self.game_state = "IN_GAME"
         self.current_prompt = random.choice(PROMPTS)
         print(f"Room '{self.room_id}' Round {round_num}: Prompt is '{self.current_prompt}'")
 
@@ -166,34 +167,28 @@ class GameRoom:
         await asyncio.sleep(GAME_CONFIG["ROUND_DURATION_S"])
         if self.game_state == "IN_GAME":
             print(f"Room '{self.room_id}' timer expired.")
-            await self.end_round(winner=None, reason="Time is up!")
+            await self.end_round()
 
     async def process_guess(self, player_name: str, guess: str):
         if not guess: return
-        await self.broadcast({
-            "type": "new_guess",
-            "payload": {"player": player_name, "message": guess}
-        })
         if guess.strip().lower() == self.current_prompt.lower():
             self.scores[player_name] += GAME_CONFIG["POINTS_FOR_CORRECT_GUESS"]
-            await self.end_round(winner=player_name, reason=f"Guessed correctly!")
+            await self.broadcast_player_update()
 
-    async def end_round(self, winner: Optional[str], reason: str):
+    async def end_round(self):
         # Stop all background tasks for this round
-        if self.round_timer_task: self.round_timer_task.cancel()
         if self.image_stream_task: self.image_stream_task.cancel()
 
         self.game_state = "POST_ROUND"
-        print(f"Room '{self.room_id}' round ended. Winner: {winner}. Reason: {reason}")
+        print(f"Room '{self.room_id}' round ended.")
         await self.broadcast({
             "type": "round_end",
             "payload": {
                 "correctPrompt": self.current_prompt,
-                "winner": winner,
-                "reason": reason,
                 "scores": [{"name": name, "score": self.scores[name]} for name in self.players]
             }
         })
+        print("we are here")
 
 # --- ConnectionManager and FastAPI App (No changes here) ---
 class ConnectionManager:
