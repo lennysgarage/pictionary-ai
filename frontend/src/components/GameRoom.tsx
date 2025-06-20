@@ -32,7 +32,6 @@ export default function GameRoom() {
   };
 
   const sortedPlayers = [...players].sort((a, b) => b.score - a.score);
-  const topScore = sortedPlayers[0]?.score || 1;
 
   return (
     <Flex direction="column" minH="100vh" w="100%" bg="gray.900">
@@ -60,11 +59,10 @@ export default function GameRoom() {
             <Heading size="sm" mb={3} color="blue.200">Scoreboard</Heading>
             <VStack align="stretch" gap={2}>
               {sortedPlayers.map((p, i) => {
-                const percent = topScore ? Math.round((p.score / topScore) * 100) : 0;
                 return (
                   <Flex key={p.name} align="center" justify="space-between" bg="gray.700" p={2} borderRadius="sm" borderLeftWidth={3} borderLeftColor={i === 0 ? 'yellow.400' : 'gray.600'}>
                     <Text fontWeight="bold">{i + 1}st: {p.name}</Text>
-                    <Text color="blue.200" fontSize="sm">{percent}%</Text>
+                    <Text color="blue.200" fontSize="sm">{p.bestSimilarity.toFixed(1)}%</Text>
                     <Text color="orange.300" fontWeight="bold">({p.score})</Text>
                   </Flex>
                 );

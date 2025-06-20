@@ -2,6 +2,7 @@ export interface Player {
     name: string;
     score: number;
     isHost: boolean;
+    bestSimilarity: number;
   }
   
   export interface ChatMessage {

@@ -50,7 +50,6 @@ export default function Lobby() {
                                 {player.isHost && <Icon as={FaCrown} color="yellow.400" position="absolute" top={2} right={2} />}
                                 <Icon as={FaUserCircle} w={12} h={12} color="orange.200" />
                                 <Text fontWeight={player.name === playerName ? 'bold' : 'normal'}>{player.name}</Text>
-                                <Text fontSize="sm" color="gray.300">{player.score}</Text>
                             </VStack>
                         ))}
                     </Grid>

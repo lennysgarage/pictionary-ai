@@ -56,6 +56,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
             currentImageB64: message.payload.imageBase64, 
             roundWinner: null,
             correctPrompt: null,
+            similarity: 0, // Reset similarity to 0 for new round
           }));
           break;
         
@@ -78,7 +79,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
             ...prev,
             gameState: 'POST_ROUND',
             correctPrompt: message.payload.correctPrompt,
-            players: message.payload.scores,
+            // Don't overwrite players here - they should be updated via player_update messages
           }));
           break;
         case 'guess_feedback':

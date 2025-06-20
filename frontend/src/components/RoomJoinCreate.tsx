@@ -17,7 +17,7 @@ export default function RoomJoinCreate() {
     <Box p={8} borderWidth={1} borderRadius="lg" boxShadow="xl" bg="gray.700" minW="400px">
       <VStack gap={4}>
         <Text fontSize="2xl" fontWeight="bold" color="orange.300">
-          Pictionary AI
+          Promptanary
         </Text>
         <Input
           value={playerName}

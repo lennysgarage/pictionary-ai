@@ -29,7 +29,7 @@ PROMPTS = [
     "Yoda playing the guitar",
     "An image of a crow sitting in a tree",
     "very long limo",
-    "happy software developer",
+    "happy software engineer",
     "pug pikachu",
     "A boat down a river",
     "A blue coffee cup",
@@ -45,9 +45,10 @@ PROMPTS = [
     "futuristic tree house",
     "oil painting of master chief"
     "the perfet bonsai tree",
-    "albert einstein playing minecraft",
-    "Mad max fighting dinosaur from jurassic park",
-    "masjci royal tall ship on a calm sea",
+    "albert einstein beside a chalkboard",
+    "minecraft",
+    "Mad max and dinosaur from jurassic park",
+    "majestic royal tall ship on a calm sea",
 ]
 
 # --- GameRoom Class (Main Changes are Here) ---
@@ -62,13 +63,15 @@ class GameRoom:
         self.scores: Dict[str, int] = {}
         self.game_state: str = "LOBBY"
         self.current_prompt: str = ""
-        self.current_image_b64: Optional[str] = ""
+        self.current_image_b64: str = ""
         self.round_timer_task: Optional[asyncio.Task] = None
         self.game_loop_task: Optional[asyncio.Task] = None
         # NEW: Add a task for the image generation stream
         self.image_stream_task: Optional[asyncio.Task] = None
         self.round_start_time: float = 0.0
         self.round_best_scores: Dict[str, int] = {}
+        # NEW: Track highest similarity for each player in current round
+        self.round_best_similarities: Dict[str, float] = {}
         print(f"Room {room_id} created.")
 
     # --- Connection Management & Message Handling (No changes here) ---
@@ -103,7 +106,12 @@ class GameRoom:
 
     async def broadcast_player_update(self):
         player_data = [
-            {"name": name, "score": self.scores[name], "isHost": name == self.host}
+            {
+                "name": name, 
+                "score": self.scores[name], 
+                "isHost": name == self.host,
+                "bestSimilarity": self.round_best_similarities.get(name, 0.0)
+            }
             for name in self.players
         ]
         await self.broadcast({"type": "player_update", "payload": {"players": player_data}})
@@ -126,7 +134,7 @@ class GameRoom:
             self.game_loop_task = asyncio.create_task(self.run_game_loop())
 
     async def run_game_loop(self):
-        for round_num in range(1, 10): # at most 10 rounds
+        for round_num in range(1, 11): # at most 10 rounds
             if not self.players:
                 break
             await self.start_round(round_num)
@@ -140,6 +148,7 @@ class GameRoom:
         self.game_state = "IN_GAME"
         self.current_prompt = random.choice(PROMPTS)
         self.round_best_scores.clear()
+        self.round_best_similarities.clear()
         self.round_start_time = time.time()
         print(f"Room '{self.room_id}' Round {round_num}: Prompt is '{self.current_prompt}'")
 
@@ -156,7 +165,10 @@ class GameRoom:
             }
         })
         
-        # Step 2: Start the background tasks for the timer AND the image stream
+        # Step 2: Broadcast updated player data with reset similarities
+        await self.broadcast_player_update()
+        
+        # Step 3: Start the background tasks for the timer AND the image stream
         if self.round_timer_task: self.round_timer_task.cancel()
         if self.image_stream_task: self.image_stream_task.cancel()
         
@@ -177,7 +189,7 @@ class GameRoom:
                         break # End this task
                     
                     # We received an image chunk. Broadcast it immediately.
-                    self.current_image_b64 = message # Keep track of the latest image
+                    self.current_image_b64 = message.decode('utf-8') if isinstance(message, bytes) else message # Keep track of the latest image
                     full_data_url = f"data:image/png;base64,{self.current_image_b64}"
                     # Convert the image chunk to base64
                     await self.broadcast({
@@ -235,7 +247,14 @@ class GameRoom:
         if similarity < 0:
             return
 
-        # --- 4. Calculate Potential Score (from Similarity + Time) ---
+        # --- 4. Update Best Similarity for the Round ---
+        current_best_similarity = self.round_best_similarities.get(player_name, 0.0)
+        if similarity > current_best_similarity:
+            self.round_best_similarities[player_name] = similarity
+            # Broadcast updated player information to show new best similarity
+            await self.broadcast_player_update()
+
+        # --- 5. Calculate Potential Score (from Similarity + Time) ---
         base_points = int(GAME_CONFIG["POINTS_FOR_CORRECT_GUESS"] * (similarity / 100))
 
         # Time decay
@@ -248,7 +267,7 @@ class GameRoom:
             time_modifier = 1.5 - round_progress
             
         potential_new_score = int(base_points * time_modifier)
-        # --- 5. Update Total Score Only If It's a New Best ---
+        # --- 6. Update Total Score Only If It's a New Best ---
         current_best_score = self.round_best_scores.get(player_name, 0)
 
         if potential_new_score > current_best_score:
@@ -266,7 +285,6 @@ class GameRoom:
             # Broadcast the updated scoreboard to ALL players
             await self.broadcast_player_update()
 
-
     async def end_round(self):
         # Stop all background tasks for this round
         if self.image_stream_task: self.image_stream_task.cancel()
@@ -277,7 +295,8 @@ class GameRoom:
             "type": "round_end",
             "payload": {
                 "correctPrompt": self.current_prompt,
-                "scores": [{"name": name, "score": self.scores[name]} for name in self.players]
+                "scores": [{"name": name, "score": self.scores[name]} for name in self.players],
+                "roundBestSimilarities": self.round_best_similarities
             }
         })
 
