@@ -24,6 +24,7 @@ export interface Player {
     roundWinner: string | null;
     correctPrompt: string | null;
     roundEndReason: string | null;
+    similarity: number;
   }
   
   // This defines the structure of the context we will provide

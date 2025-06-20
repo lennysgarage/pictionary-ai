@@ -5,11 +5,17 @@ import asyncio
 import websockets
 import json
 import random
+import time # NEW: Import the time module
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from typing import Dict, List, Optional
 
+import httpx
+
+
 # --- Configuration & Prompts (No changes here) ---
 AI_SERVER_URI = "ws://localhost:8000/ws/generate"
+AI_SCORING_URL = "http://localhost:8000/score/similarity"
+
 GAME_CONFIG = {
     "ROUND_DURATION_S": 30,
     "POST_ROUND_DELAY_S": 10,
@@ -20,13 +26,29 @@ PROMPTS = [
     "A photorealistic portrait of a cat wearing a monocle",
     "A squirrel in the style of picasso",
     "Darth vader playing the drums",
-    "An astronaut playing a guitar on the moon",
+    "An astronaut playing a trumpet on the moon",
     "Yoda playing the guitar",
     "An image of a crow sitting in a tree",
     "very long limo",
     "happy software developer",
     "pug pikachu",
-    "A boat down a river"
+    "A boat down a river",
+    "A blue coffee cup",
+    "A vintage car",
+    "A white dog sleeping on a couch",
+    "Raindrops on a window",
+    "A empty park bench",
+    "stardew valley",
+    "pope francis as a DJ in a nightclub",
+    "landscape view from the Moon with the earth in the background",
+    "cute toy owl made of suede",
+    "industrial age pocket watch",
+    "futuristic tree house",
+    "oil painting of master chief"
+    "the perfet bonsai tree",
+    "albert einstein playing minecraft",
+    "Mad max fighting dinosaur from jurassic park",
+    "masjci royal tall ship on a calm sea",
 ]
 
 # --- GameRoom Class (Main Changes are Here) ---
@@ -46,6 +68,8 @@ class GameRoom:
         self.game_loop_task: Optional[asyncio.Task] = None
         # NEW: Add a task for the image generation stream
         self.image_stream_task: Optional[asyncio.Task] = None
+        self.round_start_time: float = 0.0
+        self.round_best_scores: Dict[str, int] = {}
         print(f"Room {room_id} created.")
 
     # --- Connection Management & Message Handling (No changes here) ---
@@ -116,6 +140,8 @@ class GameRoom:
         """Initializes a round, sends initial data, THEN starts the image stream."""
         self.game_state = "IN_GAME"
         self.current_prompt = random.choice(PROMPTS)
+        self.round_best_scores.clear()
+        self.round_start_time = time.time()
         print(f"Room '{self.room_id}' Round {round_num}: Prompt is '{self.current_prompt}'")
 
         # Step 1: Broadcast the new turn signal with a NULL image initially.
@@ -124,7 +150,7 @@ class GameRoom:
             "type": "new_turn",
             "payload": {
                 "round": round_num,
-                "totalRounds": len(PROMPTS),
+                "totalRounds": 10,
                 "timeLeft": GAME_CONFIG["ROUND_DURATION_S"],
                 "imageBase64": None, # Initially null
                 "promptHint": f"{len(self.current_prompt.split())} words"
@@ -170,10 +196,77 @@ class GameRoom:
             await self.end_round()
 
     async def process_guess(self, player_name: str, guess: str):
-        if not guess: return
-        if guess.strip().lower() == self.current_prompt.lower():
-            self.scores[player_name] += GAME_CONFIG["POINTS_FOR_CORRECT_GUESS"]
+        """
+        Processes multiple guesses per player, sending private feedback for each
+        and only updating their score if they achieve a new high score for the round.
+        """
+        # --- 1. Initial Checks ---
+        if not guess or self.game_state != "IN_GAME":
+            return
+
+        # --- 2. Get Similarity Score from AI Server ---
+        similarity = 0.0
+        try:
+            async with httpx.AsyncClient() as client:
+                # This part is unchanged - we still call the AI server
+                response = await client.post(
+                    AI_SCORING_URL,
+                    json={"prompt": self.current_prompt, "guess": guess},
+                    timeout=10.0
+                )
+                response.raise_for_status()
+                similarity = response.json().get("score", 0.0)
+        except httpx.RequestError as e:
+            print(f"Error calling AI scoring server: {e}")
+            # Still send feedback to the user, even if there was an error
+            similarity = -1 # Use a negative number to indicate an error state
+
+        # --- 3. Send PRIVATE Feedback to the Guesser ---
+        # Get the specific player's websocket connection
+        player_websocket = self.players.get(player_name)
+        if player_websocket:
+            await player_websocket.send_json({
+                "type": "guess_feedback",
+                "payload": {
+                    "similarity": round(similarity, 2)
+                }
+            })
+        
+        # If there was a scoring error, stop here
+        if similarity < 0:
+            return
+
+        # --- 4. Calculate Potential Score (from Similarity + Time) ---
+        base_points = int(GAME_CONFIG["POINTS_FOR_CORRECT_GUESS"] * (similarity / 100))
+
+        # Time decay
+        time_elapsed = time.time() - self.round_start_time
+        round_progress = min(1.0, time_elapsed / GAME_CONFIG["ROUND_DURATION_S"])
+        time_modifier = 1.0 # No penalty in the first half
+
+        # Apply penalty only in the second half of the round
+        if round_progress > 0.8:
+            time_modifier = 1.5 - round_progress
+            
+        potential_new_score = int(base_points * time_modifier)
+        # --- 5. Update Total Score Only If It's a New Best ---
+        current_best_score = self.round_best_scores.get(player_name, 0)
+
+        if potential_new_score > current_best_score:
+            # Calculate the *difference* to add to the player's permanent score
+            points_to_add = potential_new_score - current_best_score
+            
+            # Update the permanent total score
+            self.scores[player_name] += points_to_add
+            
+            # Update the best score for this round
+            self.round_best_scores[player_name] = potential_new_score
+            
+            print(f"IMPROVEMENT for '{player_name}': New round score is {potential_new_score}. Added {points_to_add} to total.")
+
+            # Broadcast the updated scoreboard to ALL players
             await self.broadcast_player_update()
+
 
     async def end_round(self):
         # Stop all background tasks for this round

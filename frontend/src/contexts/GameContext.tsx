@@ -20,6 +20,7 @@ const initialState: GameState = {
   roundWinner: null,
   correctPrompt: null,
   roundEndReason: null,
+  similarity: 0,
 };
 
 // Create the context with a default value
@@ -80,6 +81,12 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
             players: message.payload.scores,
           }));
           break;
+        case 'guess_feedback':
+            setGameState(prev => ({
+                ...prev,
+                similarity: message.payload.similarity,
+            }));
+            break;
         default:
           console.warn('Unknown message type:', message.type);
       }

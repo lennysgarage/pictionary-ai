@@ -8,7 +8,7 @@ const PLACEHOLDER_IMAGE = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAA
 
 export default function GameRoom() {
   const { gameState, sendMessage, disconnect } = useGame();
-  const { players, currentRound, totalRounds, timeLeft, promptHint, currentImageB64, roundWinner, correctPrompt, roundEndReason, gameState: roomState } = gameState;
+  const { players, currentRound, totalRounds, timeLeft, promptHint, currentImageB64, correctPrompt, similarity, gameState: roomState } = gameState;
 
   const [guess, setGuess] = useState("");
   const [timer, setTimer] = useState(timeLeft);
@@ -81,6 +81,14 @@ export default function GameRoom() {
                 <Button type="submit" colorScheme="orange" disabled={!guess.trim()}>Guess</Button>
               </HStack>
             </form>
+
+            {similarity !== 0 && (
+              <Box mt={3} p={2} bg="gray.800" borderRadius="md" textAlign="center">
+                <Text color="yellow.300" fontWeight="bold">
+                  {`Similarity: ${similarity.toFixed(2)}%`}
+                </Text>
+              </Box>
+            )}
           </Box>
         </Flex>
       </Flex>
@@ -89,8 +97,6 @@ export default function GameRoom() {
       {roomState === 'POST_ROUND' && (
         <Box position="fixed" top="0" left="0" w="100vw" h="100vh" bg="blackAlpha.700" display="flex" alignItems="center" justifyContent="center" zIndex={1000}>
           <Box bg="gray.700" p={8} borderRadius="lg" boxShadow="2xl" minW="340px">
-            {/* <Heading size="md" mb={2} color="yellow.300">{roundWinner ? `${roundWinner} Wins!` : "Time's Up!"}</Heading> */}
-            {/* <Text fontSize="lg" mb={2}>{roundEndReason}</Text> */}
             <Text>The correct prompt was:</Text>
             <Text fontWeight="bold" color="yellow.400" textAlign="center" mb={4}>{correctPrompt}</Text>
             <Text color="gray.300">Next round starting soon...</Text>

@@ -11,11 +11,20 @@ import io
 import os
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel # NEW: For creating the request body model
 from diffusers import StableDiffusionXLPipeline, DiffusionPipeline, DPMSolverMultistepScheduler
+
+from sentence_transformers import SentenceTransformer, util
+
 
 # --- 1. Server and Model Setup ---
 
 app = FastAPI()
+
+class ScoringRequest(BaseModel):
+    prompt: str
+    guess: str
+
 
 print("Loading model... This may take a moment.")
 if torch.backends.mps.is_available():
@@ -60,9 +69,36 @@ print("Hyper-SD LoRA for SDv1.5 fused successfully.")
 pipeline.scheduler = DPMSolverMultistepScheduler.from_config(pipeline.scheduler.config)
 print("Model loaded and configured with DPMSolverMultistepScheduler.")
 
+print("Loading similarity scoring model...")
+similarity_model = SentenceTransformer('all-MiniLM-L6-v2', device=device)
+print("Similarity model loaded.")
+
+# --- 2. NEW Scoring Endpoint ---
+
+@app.post("/score/similarity")
+async def score_similarity(request: ScoringRequest):
+    """
+    Receives a correct prompt and a user's guess, and returns a similarity score.
+    """
+    if not request.prompt or not request.guess:
+        return {"score": 0.0}
+
+    # Generate embeddings for both prompts
+    embedding1 = similarity_model.encode(request.prompt, convert_to_tensor=True)
+    embedding2 = similarity_model.encode(request.guess, convert_to_tensor=True)
+
+    # Calculate cosine similarity
+    cosine_score = util.cos_sim(embedding1, embedding2)
+
+    # Normalize to a 0-100 scale
+    similarity_percentage = max(0, cosine_score.item()) * 100
+
+    print(f"Scoring: '{request.prompt}' vs '{request.guess}' -> {similarity_percentage:.2f}%")
+
+    return {"score": similarity_percentage}
 
 
-# --- 2. WebSocket Endpoint for Image Generation ---
+# --- 3. WebSocket Endpoint for Image Generation ---
 
 @app.websocket("/ws/generate")
 async def websocket_endpoint(websocket: WebSocket):
