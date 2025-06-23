@@ -8,7 +8,7 @@ const PLACEHOLDER_IMAGE = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAA
 
 export default function GameRoom() {
   const { gameState, sendMessage, disconnect } = useGame();
-  const { players, currentRound, totalRounds, timeLeft, currentImageB64, correctPrompt, similarity, gameState: roomState } = gameState;
+  const { players, playerName, currentRound, totalRounds, timeLeft, currentImageB64, correctPrompt, similarity, gameState: roomState } = gameState;
 
   const [guess, setGuess] = useState("");
   const [timer, setTimer] = useState(timeLeft);
@@ -58,12 +58,31 @@ export default function GameRoom() {
           <Box bg="gray.800" borderRadius="md" p={4} boxShadow="md">
             <Heading size="sm" mb={3} color="blue.200">Scoreboard</Heading>
             <VStack align="stretch" gap={2}>
-              {sortedPlayers.map((p, i) => {
+            {sortedPlayers.map((p, i) => {
+                const isCurrentUser = p.name === playerName;
+                const rankColor = i === 0 ? 'yellow.400' : 'gray.600';
+
                 return (
-                  <Flex key={p.name} align="center" justify="space-between" bg="gray.700" p={2} borderRadius="sm" borderLeftWidth={3} borderLeftColor={i === 0 ? 'yellow.400' : 'gray.600'}>
-                    <Text fontWeight="bold">{i + 1}st: {p.name}</Text>
-                    <Text color="blue.200" fontSize="sm">{p.bestSimilarity.toFixed(1)}%</Text>
-                    <Text color="orange.300" fontWeight="bold">({p.score})</Text>
+                  <Flex
+                    key={p.name}
+                    align="center"
+                    justify="space-between"
+                    bg={isCurrentUser ? 'blue.800' : 'gray.700'}
+                    p={2}
+                    borderRadius="sm"
+                    borderLeftWidth={3}
+                    borderLeftColor={rankColor}
+                    borderColor={isCurrentUser ? 'blue.500' : 'transparent'}
+                    borderWidth="1px"
+                  >
+                    <Text fontWeight={isCurrentUser ? "extrabold" : "bold"} color={isCurrentUser ? "white" : "inherit"}>
+                      {i + 1}. {p.name} {isCurrentUser && "(You)"}
+                    </Text>
+
+                    <HStack>
+                        <Text color="blue.200" fontSize="sm">{p.bestSimilarity.toFixed(1)}%</Text>
+                        <Text color="orange.300" fontWeight="bold">({p.score})</Text>
+                    </HStack>
                   </Flex>
                 );
               })}
