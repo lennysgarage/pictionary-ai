@@ -4,11 +4,13 @@ import os
 import random
 import time
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from typing import Dict, Optional
 import httpx
+import string
 
 
-# --- Configuration & Prompts (No changes here) ---
+# --- Configuration & Prompts ---
 AI_SERVER_URL = os.environ.get("AI_SERVER_URL", "ws://localhost:8000/ws/generate")
 AI_SCORING_URL = os.environ.get("AI_SCORING_URL", "http://localhost:8000/score/similarity")
 
@@ -60,7 +62,7 @@ PROMPTS = [
     "A robot serving coffee",
 ]
 
-# --- GameRoom Class (Main Changes are Here) ---
+# --- GameRoom Class ---
 
 class GameRoom:
     """Manages the state and logic for a single game room."""
@@ -100,8 +102,8 @@ class GameRoom:
             if self.host == player_name:
                 self.host = next(iter(self.players), None)
             if not self.players and self.game_loop_task:
-                 self.game_loop_task.cancel()
-                 if self.image_stream_task:
+                self.game_loop_task.cancel()
+                if self.image_stream_task:
                     self.image_stream_task.cancel()
             await self.broadcast_player_update()
             print(f"Player '{player_name}' disconnected. New host is '{self.host}'.")
@@ -116,8 +118,8 @@ class GameRoom:
     async def broadcast_player_update(self):
         player_data = [
             {
-                "name": name, 
-                "score": self.scores[name], 
+                "name": name,
+                "score": self.scores[name],
                 "isHost": name == self.host,
                 "bestSimilarity": self.round_best_similarities.get(name, 0.0)
             }
@@ -139,7 +141,8 @@ class GameRoom:
         if self.game_state == "LOBBY":
             self.game_state = "IN_GAME"
             print(f"Room '{self.room_id}' is starting the game.")
-            await self.broadcast({"type": "game_started", "payload": {}})
+            # MODIFICATION: Send the room ID in the payload to fix navigation bug
+            await self.broadcast({"type": "game_started", "payload": {"roomId": self.room_id}})
             self.game_loop_task = asyncio.create_task(self.run_game_loop())
 
     async def run_game_loop(self):
@@ -148,7 +151,7 @@ class GameRoom:
                 break
             await self.start_round(round_num)
             await asyncio.sleep(GAME_CONFIG["ROUND_DURATION_S"] + GAME_CONFIG["POST_ROUND_DELAY_S"])
-        
+
         print(f"Game in room '{self.room_id}' has ended.")
         self.game_state = "LOBBY"
 
@@ -173,14 +176,14 @@ class GameRoom:
                 "promptHint": f"{len(self.current_prompt.split())} words"
             }
         })
-        
+
         # Step 2: Broadcast updated player data with reset similarities
         await self.broadcast_player_update()
-        
+
         # Step 3: Start the background tasks for the timer AND the image stream
         if self.round_timer_task: self.round_timer_task.cancel()
         if self.image_stream_task: self.image_stream_task.cancel()
-        
+
         self.round_timer_task = asyncio.create_task(self.round_timer())
         self.image_stream_task = asyncio.create_task(self.run_image_generation_and_broadcast())
 
@@ -189,14 +192,14 @@ class GameRoom:
         try:
             async with websockets.connect(AI_SERVER_URL) as ai_websocket:
                 await ai_websocket.send(self.current_prompt)
-                
+
                 while True:
                     message = await ai_websocket.recv()
-                    
+
                     if message == "generation_complete":
                         print(f"Room '{self.room_id}': Generation complete.")
                         break # End this task
-                    
+
                     # We received an image chunk. Broadcast it immediately.
                     self.current_image_b64 = message.decode('utf-8') if isinstance(message, bytes) else message # Keep track of the latest image
                     full_data_url = f"data:image/png;base64,{self.current_image_b64}"
@@ -251,7 +254,7 @@ class GameRoom:
                     "similarity": round(similarity, 2)
                 }
             })
-        
+
         # If there was a scoring error, stop here
         if similarity < 0:
             return
@@ -274,7 +277,7 @@ class GameRoom:
         # Apply penalty only in the second half of the round
         if round_progress > 0.8:
             time_modifier = 1.5 - round_progress
-            
+
         potential_new_score = int(base_points * time_modifier)
         # --- 6. Update Total Score Only If It's a New Best ---
         current_best_score = self.round_best_scores.get(player_name, 0)
@@ -282,13 +285,13 @@ class GameRoom:
         if potential_new_score > current_best_score:
             # Calculate the *difference* to add to the player's permanent score
             points_to_add = potential_new_score - current_best_score
-            
+
             # Update the permanent total score
             self.scores[player_name] += points_to_add
-            
+
             # Update the best score for this round
             self.round_best_scores[player_name] = potential_new_score
-            
+
             print(f"IMPROVEMENT for '{player_name}': New round score is {potential_new_score}. Added {points_to_add} to total.")
 
             # Broadcast the updated scoreboard to ALL players
@@ -325,13 +328,48 @@ class ConnectionManager:
 app = FastAPI()
 manager = ConnectionManager()
 
+origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "https://pictionary-ai.pages.dev"
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# To create a new room from the frontend
+@app.post("/api/rooms")
+async def create_room_endpoint():
+    """
+    Creates a new game room and returns its ID.
+    """
+    while True:
+        room_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
+        if room_id not in manager.rooms:
+            break
+    manager.get_or_create_room(room_id)
+    print(f"New room created via API endpoint: {room_id}")
+    return {"room_id": room_id}
+
+
 @app.websocket("/ws/game/{room_id}/{player_name}")
 async def websocket_endpoint(websocket: WebSocket, room_id: str, player_name: str):
     room = manager.get_or_create_room(room_id)
-    if len(room.players) >= GAME_CONFIG["MAX_PLAYERS"] or player_name in room.players:
+    if len(room.players) >= GAME_CONFIG["MAX_PLAYERS"]:
         await websocket.accept()
-        await websocket.close(code=1008, reason="Room is full or name is taken.")
+        await websocket.close(code=1008, reason="room_full")
         return
+
+    if player_name in room.players:
+        await websocket.accept()
+        await websocket.close(code=1008, reason="name_taken")
+        return
+
     await room.connect(websocket, player_name)
     try:
         while True:
