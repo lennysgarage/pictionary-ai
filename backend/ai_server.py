@@ -6,10 +6,10 @@ import os
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel # NEW: For creating the request body model
-from diffusers import LCMScheduler, AutoPipelineForText2Image
+from diffusers import DiffusionPipeline, DDIMScheduler
 
 from sentence_transformers import SentenceTransformer, util
-
+from huggingface_hub import hf_hub_download
 
 # --- 1. Server and Model Setup ---
 
@@ -32,7 +32,7 @@ else:
     print("MPS not available, using CPU with float32 precision.")
     variant = "fp32"
 
-pipeline = AutoPipelineForText2Image.from_pretrained(
+pipeline = DiffusionPipeline.from_pretrained(
     "stable-diffusion-v1-5/stable-diffusion-v1-5", 
     torch_dtype=torch_dtype,
     variant=variant,
@@ -40,13 +40,13 @@ pipeline = AutoPipelineForText2Image.from_pretrained(
 ).to(device)
 
 
-pipeline.scheduler = LCMScheduler.from_config(pipeline.scheduler.config)
-print("Model loaded and configured with LCMScheduler.")
-
 print("Loading and fusing LoRA for SDv1.5...")
-pipeline.load_lora_weights("latent-consistency/lcm-lora-sdv1-5")
-
+repo_name = "ByteDance/Hyper-SD"
+ckpt_name = "Hyper-SD15-8steps-lora.safetensors"
+pipeline.load_lora_weights(hf_hub_download(repo_name, ckpt_name))
 pipeline.fuse_lora()
+
+pipeline.scheduler = DDIMScheduler.from_config(pipeline.scheduler.config, timestep_spacing="trailing")
 print("LoRA for SDv1.5 fused successfully.")
 
 print("Loading similarity scoring model...")
@@ -104,7 +104,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 # Convert the PIL Image to bytes in memory
                 buffer = io.BytesIO()
-                image.save(buffer, format="PNG")
+                image.save(buffer, format="JPEG")
                 img_bytes = buffer.getvalue()
 
                 # Encode the bytes to a Base64 string
@@ -125,8 +125,8 @@ async def websocket_endpoint(websocket: WebSocket):
             await asyncio.to_thread(
                 pipeline,
                 prompt=prompt,
-                num_inference_steps=4,
-                guidance_scale=0,
+                num_inference_steps=8,
+                guidance_scale=0.0,
                 callback_on_step_end_steps=1,
                 callback_on_step_end=stream_intermediate_image,
             )

@@ -43,13 +43,21 @@ PROMPTS = [
     "cute toy owl made of suede",
     "industrial age pocket watch",
     "futuristic tree house",
-    "oil painting of master chief"
+    "oil painting of master chief",
     "the perfet bonsai tree",
     "albert einstein beside a chalkboard",
     "minecraft",
-    "Mad max and dinosaur from jurassic park",
+    "Dinosaur from jurassic park",
     "majestic royal tall ship on a calm sea",
-    "Astronauts in a jungle, cold color palette"
+    "Astronauts in a jungle, cold color palette",
+    "A sloth riding a skateboard",
+    "A robot chef making sushi",
+    "A paper airplane",
+    "A car driving on a winding road",
+    "A professor giving a lecture",
+    "A rocket launching into space",
+    "A dog catching a frisbee",
+    "A robot serving coffee",
 ]
 
 # --- GameRoom Class (Main Changes are Here) ---
