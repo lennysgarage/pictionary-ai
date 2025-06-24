@@ -5,7 +5,7 @@ import random
 import time
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, List
 import httpx
 import string
 import json
@@ -41,7 +41,7 @@ PROMPTS = [
     "A robot serving coffee",
 ]
 
-# --- GameRoom Class (No changes needed here) ---
+# --- GameRoom Class (with modifications) ---
 class GameRoom:
     """Manages the state and logic for a single game room."""
 
@@ -59,6 +59,7 @@ class GameRoom:
         self.round_start_time: float = 0.0
         self.round_best_scores: Dict[str, int] = {}
         self.round_best_similarities: Dict[str, float] = {}
+        self.available_prompts: List[str] = []
         print(f"Room {room_id} created.")
 
     def get_full_game_state(self) -> Dict[str, Any]:
@@ -76,9 +77,9 @@ class GameRoom:
             "roomId": self.room_id,
             "players": player_data,
             "gameState": self.game_state,
-            "currentRound": 0, # Or actual if mid-game
+            "currentRound": 0,
             "totalRounds": 10,
-            "timeLeft": 0, # Or actual
+            "timeLeft": 0,
             "promptHint": f"{len(self.current_prompt.split())} words" if self.current_prompt else "",
             "currentImageB64": self.current_image_b64,
             "correctPrompt": self.current_prompt if self.game_state == 'POST_ROUND' else None,
@@ -144,7 +145,12 @@ class GameRoom:
     async def start_game(self):
         if self.game_state == "LOBBY":
             self.game_state = "IN_GAME"
-            print(f"Room '{self.room_id}' is starting the game.")
+            
+            # --- CHANGE 2: Create a fresh, shuffled list of prompts for this game session ---
+            self.available_prompts = PROMPTS.copy()
+            random.shuffle(self.available_prompts)
+            print(f"Room '{self.room_id}' is starting the game with {len(self.available_prompts)} unique prompts.")
+            
             await self.broadcast({"type": "game_starting", "payload": {"roomId": self.room_id}})
             self.game_loop_task = asyncio.create_task(self.run_game_loop())
 
@@ -159,7 +165,17 @@ class GameRoom:
 
     async def start_round(self, round_num: int):
         self.game_state = "IN_GAME"
-        self.current_prompt = random.choice(PROMPTS)
+        
+        # --- CHANGE 3: Get a unique prompt for this round ---
+        # If we've run out of prompts, reset the list to avoid crashing.
+        if not self.available_prompts:
+            print(f"Room '{self.room_id}' ran out of prompts. Resetting and reshuffling.")
+            self.available_prompts = PROMPTS.copy()
+            random.shuffle(self.available_prompts)
+
+        # Pop a prompt from the room's list to ensure it's not used again this game.
+        self.current_prompt = self.available_prompts.pop()
+        
         self.round_best_scores.clear()
         self.round_best_similarities.clear()
         self.round_start_time = time.time()
@@ -255,13 +271,12 @@ class GameRoom:
             }
         })
 
-# --- ConnectionManager and FastAPI App ---
+# --- ConnectionManager and FastAPI App
 class ConnectionManager:
     def __init__(self):
         self.rooms: Dict[str, GameRoom] = {}
         self.active_connections: Dict[WebSocket, tuple[str, str]] = {}
 
-    # --- LOGIC CHANGE 1: Separated "create" and "get" methods ---
     def create_room(self) -> GameRoom:
         """Creates a new room with a unique ID, stores it, and returns it."""
         while True:
@@ -278,7 +293,6 @@ class ConnectionManager:
         return self.rooms.get(room_id)
         
     def remove_room_if_empty(self, room_id: str):
-        # This check is important to avoid errors if the room was already removed
         room = self.get_room(room_id)
         if room and not room.players:
             del self.rooms[room_id]
@@ -295,7 +309,6 @@ app.add_middleware(
     allow_methods=["*"], allow_headers=["*"],
 )
 
-# --- LOGIC CHANGE 2: API endpoint now ONLY creates rooms ---
 @app.post("/api/rooms")
 async def create_room_endpoint():
     """This is now the only place where a new room is created."""
@@ -303,7 +316,6 @@ async def create_room_endpoint():
     print(f"New room created via API endpoint: {room.room_id}")
     return {"room_id": room.room_id}
 
-# --- LOGIC CHANGE 3: WebSocket endpoint now ONLY gets existing rooms ---
 @app.websocket("/ws/game")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -325,7 +337,6 @@ async def websocket_endpoint(websocket: WebSocket):
 
             room = manager.get_room(room_id)
 
-            # If the room doesn't exist, reject the connection.
             if not room:
                 await websocket.send_json({"type": "error", "message": "room_not_found"})
                 await websocket.close()
@@ -360,7 +371,6 @@ async def websocket_endpoint(websocket: WebSocket):
         if websocket in manager.active_connections:
             room_id, player_name = manager.active_connections.pop(websocket)
             if room_id and player_name:
-                # No need to check if room_id is in manager.rooms, get_room handles it
                 room = manager.get_room(room_id)
                 if room:
                     await room.disconnect(player_name)
