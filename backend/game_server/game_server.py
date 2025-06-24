@@ -38,12 +38,10 @@ PROMPTS = [
     "Astronauts in a jungle, cold color palette", "A sloth riding a skateboard",
     "A robot chef making sushi", "A paper airplane", "A car driving on a winding road",
     "A professor giving a lecture", "A rocket launching into space", "A dog catching a frisbee",
-    "A robot serving coffee", "A playful otter juggling", "A cat napping in a sunbeam",
-    "A friendly ghost sipping tea", "A single red rose in glass vase", "A stack of books",
+    "A robot serving coffee",
 ]
 
-# --- GameRoom Class (with modifications) ---
-
+# --- GameRoom Class (No changes needed here) ---
 class GameRoom:
     """Manages the state and logic for a single game room."""
 
@@ -86,20 +84,17 @@ class GameRoom:
             "correctPrompt": self.current_prompt if self.game_state == 'POST_ROUND' else None,
         }
     
-    # MODIFIED: Connect method sends full state back to joining player
     async def connect(self, websocket: WebSocket, player_name: str):
         self.players[player_name] = websocket
         self.scores[player_name] = 0
         if self.host is None:
             self.host = player_name
         
-        # Send a success message with the full state to the connecting player
         await websocket.send_json({
             "type": "join_success",
             "payload": self.get_full_game_state()
         })
 
-        # Broadcast an update to everyone else
         await self.broadcast_player_update()
         print(f"Player '{player_name}' connected to room '{self.room_id}'. Host is '{self.host}'.")
 
@@ -118,11 +113,10 @@ class GameRoom:
 
     async def broadcast(self, message: dict):
         if not self.players: return
-        # Create a list of players to iterate over to avoid issues if the dict changes during iteration
         players_to_send = list(self.players.values())
         await asyncio.gather(
             *[player.send_json(message) for player in players_to_send],
-            return_exceptions=True # Set to True to see errors if a send fails
+            return_exceptions=True
         )
 
     async def broadcast_player_update(self):
@@ -147,9 +141,6 @@ class GameRoom:
         elif message_type == "new_guess":
             await self.process_guess(player_name, payload.get("guess"))
     
-    # (Game logic methods like start_game, run_game_loop, start_round, etc. remain the same)
-    # --- Game Logic (No changes from here down, just including for completeness) ---
-
     async def start_game(self):
         if self.game_state == "LOBBY":
             self.game_state = "IN_GAME"
@@ -268,23 +259,34 @@ class GameRoom:
 class ConnectionManager:
     def __init__(self):
         self.rooms: Dict[str, GameRoom] = {}
-        # NEW: Track WebSocket to player mapping to find them on disconnect
         self.active_connections: Dict[WebSocket, tuple[str, str]] = {}
 
-    def get_or_create_room(self, room_id: str) -> GameRoom:
-        if room_id not in self.rooms:
-            self.rooms[room_id] = GameRoom(room_id)
-        return self.rooms[room_id]
+    # --- LOGIC CHANGE 1: Separated "create" and "get" methods ---
+    def create_room(self) -> GameRoom:
+        """Creates a new room with a unique ID, stores it, and returns it."""
+        while True:
+            room_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
+            if room_id not in self.rooms:
+                break
+        
+        new_room = GameRoom(room_id)
+        self.rooms[room_id] = new_room
+        return new_room
+
+    def get_room(self, room_id: str) -> Optional[GameRoom]:
+        """Safely retrieves a room by its ID, returning None if not found."""
+        return self.rooms.get(room_id)
         
     def remove_room_if_empty(self, room_id: str):
-        if room_id in self.rooms and not self.rooms[room_id].players:
+        # This check is important to avoid errors if the room was already removed
+        room = self.get_room(room_id)
+        if room and not room.players:
             del self.rooms[room_id]
             print(f"Room '{room_id}' is empty and has been closed.")
 
 app = FastAPI()
 manager = ConnectionManager()
 
-# (origins list and CORSMiddleware remain the same)
 origins = [
     "http://localhost:5173", "http://127.0.0.1:5173", "https://pictionary-ai.pages.dev"
 ]
@@ -293,24 +295,22 @@ app.add_middleware(
     allow_methods=["*"], allow_headers=["*"],
 )
 
+# --- LOGIC CHANGE 2: API endpoint now ONLY creates rooms ---
 @app.post("/api/rooms")
 async def create_room_endpoint():
-    while True:
-        room_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
-        if room_id not in manager.rooms:
-            break
-    manager.get_or_create_room(room_id)
-    print(f"New room created via API endpoint: {room_id}")
-    return {"room_id": room_id}
+    """This is now the only place where a new room is created."""
+    room = manager.create_room()
+    print(f"New room created via API endpoint: {room.room_id}")
+    return {"room_id": room.room_id}
 
+# --- LOGIC CHANGE 3: WebSocket endpoint now ONLY gets existing rooms ---
 @app.websocket("/ws/game")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    room = None
-    player_name = None
-    room_id = None
+    room: Optional[GameRoom] = None
+    player_name: Optional[str] = None
+    room_id: Optional[str] = None
     try:
-        # The first message MUST be a 'join_room' message
         initial_data = await websocket.receive_json()
         message_type = initial_data.get("type")
         payload = initial_data.get("payload", {})
@@ -323,7 +323,14 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.close(code=1008, reason="Missing room_id or player_name")
                 return
 
-            room = manager.get_or_create_room(room_id)
+            room = manager.get_room(room_id)
+
+            # If the room doesn't exist, reject the connection.
+            if not room:
+                await websocket.send_json({"type": "error", "message": "room_not_found"})
+                await websocket.close()
+                print(f"Player '{player_name}' failed to join non-existent room '{room_id}'.")
+                return
 
             if len(room.players) >= GAME_CONFIG["MAX_PLAYERS"]:
                 await websocket.send_json({"type": "error", "message": "room_full"})
@@ -335,11 +342,9 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.close()
                 return
 
-            # Store connection info for disconnect handling
             manager.active_connections[websocket] = (room_id, player_name)
             await room.connect(websocket, player_name)
 
-            # Now, listen for subsequent messages in a loop
             while True:
                 data = await websocket.receive_json()
                 await room.handle_message(player_name, data)
@@ -352,10 +357,11 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception as e:
         print(f"An unexpected error occurred for {player_name} in {room_id}: {e}")
     finally:
-        # Clean up on disconnect
         if websocket in manager.active_connections:
             room_id, player_name = manager.active_connections.pop(websocket)
-            if room_id and player_name and room_id in manager.rooms:
-                room = manager.rooms[room_id]
-                await room.disconnect(player_name)
-                manager.remove_room_if_empty(room_id)
+            if room_id and player_name:
+                # No need to check if room_id is in manager.rooms, get_room handles it
+                room = manager.get_room(room_id)
+                if room:
+                    await room.disconnect(player_name)
+                    manager.remove_room_if_empty(room_id)
