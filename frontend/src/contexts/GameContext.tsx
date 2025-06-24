@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useRef, ReactNode, useCallback } from 'react';
+import { createContext, useContext, useState, useRef, ReactNode, useCallback, useEffect } from 'react';
 import { GameState, GameContextType } from '@/types';
 import { useNavigate } from 'react-router-dom';
 
@@ -12,7 +12,7 @@ const initialState: GameState = {
   chatMessages: [],
   gameState: 'LOBBY',
   currentRound: 0,
-  totalRounds: 0,
+  totalRounds: 10,
   timeLeft: 0,
   promptHint: '',
   currentImageB64: null,
@@ -28,122 +28,147 @@ const GameContext = createContext<GameContextType | undefined>(undefined);
 // The provider component that will wrap our app
 export const GameProvider = ({ children }: { children: ReactNode }) => {
     const [gameState, setGameState] = useState<GameState>(initialState);
-    const isConnecting = useRef(false); // NEW: Use a ref as a synchronous guard
-    const websocket = useRef<WebSocket | null>(null);
+    const webSocketRef = useRef<WebSocket | null>(null);
     const navigate = useNavigate();
 
-    const handleServerMessage = (event: MessageEvent) => {
-      const message = JSON.parse(event.data);
-      console.log('Received message:', message);
+    // Central message handler
+    const handleServerMessage = useCallback((event: MessageEvent) => {
+        const data = JSON.parse(event.data);
+        console.log("Received message:", data);
 
-      switch (message.type) {
-        case 'player_update':
-          setGameState(prev => ({ ...prev, players: message.payload.players }));
-          break;
-        case 'game_started':
-          setGameState(prev => ({ ...prev, gameState: 'IN_GAME', chatMessages: [] }));
-          navigate(`/game/${message.payload.roomId}`);
-          break;
-        case 'new_turn':
-          setGameState(prev => ({
-            ...prev,
-            gameState: 'IN_GAME',
-            currentRound: message.payload.round,
-            totalRounds: message.payload.totalRounds,
-            timeLeft: message.payload.timeLeft,
-            promptHint: message.payload.promptHint,
-            // Set the image, which might be null initially
-            currentImageB64: message.payload.imageBase64,
-            roundWinner: null,
-            correctPrompt: null,
-            similarity: 0, // Reset similarity to 0 for new round
-          }));
-          break;
-        case 'image_update':
-          setGameState(prev => ({
-            ...prev,
-            currentImageB64: message.payload.imageBase64,
-          }));
-          break;
-        case 'new_guess':
-          setGameState(prev => ({
-            ...prev,
-            chatMessages: [...prev.chatMessages, message.payload],
-          }));
-          break;
-        case 'round_end':
-          setGameState(prev => ({
-            ...prev,
-            gameState: 'POST_ROUND',
-            correctPrompt: message.payload.correctPrompt,
-            // Don't overwrite players here - they should be updated via player_update messages
-          }));
-          break;
-        case 'guess_feedback':
-            setGameState(prev => ({
-                ...prev,
-                similarity: message.payload.similarity,
-            }));
-            break;
-        default:
-          console.warn('Unknown message type:', message.type);
-      }
-    };
+        switch (data.type) {
+            case 'join_success':
+            case 'game_state_update':
+                // CRITICAL FIX: Merge the server's state with the existing state.
+                // This preserves the client's `playerName` while updating everything else.
+                setGameState(prev => ({ ...prev, ...data.payload }));
+                
+                if (data.type === 'join_success' && data.payload.roomId) {
+                    navigate(`/lobby/${data.payload.roomId}`);
+                }
+                break;
+            
+            case 'player_update':
+                setGameState(prev => ({ ...prev, players: data.payload.players }));
+                break;
+            
+            case 'game_starting':
+                setGameState(prev => ({ ...prev, gameState: 'IN_GAME', chatMessages: [], ...data.payload }));
+                break;
+            
+            case 'new_turn':
+                setGameState(prev => ({
+                    ...prev,
+                    gameState: 'IN_GAME',
+                    currentRound: data.payload.round,
+                    totalRounds: data.payload.totalRounds,
+                    timeLeft: data.payload.timeLeft,
+                    currentImageB64: data.payload.imageBase64,
+                    promptHint: data.payload.promptHint,
+                    roundWinner: null,
+                    correctPrompt: null,
+                    similarity: 0,
+                }));
+                break;
 
-  const connect = useCallback((roomId: string, playerName: string) => {
-    if (websocket.current || isConnecting.current) return; // Already connected
+            case 'image_update':
+                 setGameState(prev => ({
+                    ...prev,
+                    currentImageB64: data.payload.imageBase64,
+                 }));
+                 break;
 
-    isConnecting.current = true; // Set guard immediately and synchronously
+            case 'round_end':
+                setGameState(prev => ({
+                    ...prev,
+                    gameState: 'POST_ROUND',
+                    correctPrompt: data.payload.correctPrompt,
+                }));
+                break;
 
-    const wsUrl = `${GAME_SERVER_URL}/${roomId}/${playerName}`;
-    const ws = new WebSocket(wsUrl);
+            case 'guess_feedback':
+                setGameState(prev => ({
+                    ...prev,
+                    similarity: data.payload.similarity,
+                }));
+                break;
 
-    ws.onopen = () => {
-      console.log(`Connected to ${wsUrl}`);
-      websocket.current = ws;
-      setGameState({ ...initialState, roomId, playerName });
-      navigate(`/lobby/${roomId}`);
-      isConnecting.current = false; // Release guard
-    };
+            case 'error':
+                console.error("Server error:", data.message);
+                alert(`Error from server: ${data.message}`);
+                disconnect();
+                break;
 
-    ws.onmessage = handleServerMessage;
+            default:
+                console.warn("Unhandled message type:", data.type);
+        }
+    }, [navigate]);
 
-    ws.onclose = () => {
-      console.log('Disconnected from WebSocket');
-      websocket.current = null;
-      setGameState(initialState);
-      navigate('/');
-      isConnecting.current = false; // Release guard
-    };
+    const sendMessage = useCallback((type: string, payload?: object) => {
+        if (webSocketRef.current?.readyState === WebSocket.OPEN) {
+            const message = JSON.stringify({ type, payload });
+            webSocketRef.current.send(message);
+        } else {
+            console.error('WebSocket is not connected.');
+        }
+    }, []);
 
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-      isConnecting.current = false;
-      ws.close();
-    };
-  }, [navigate]);
+    const disconnect = useCallback(() => {
+        if (webSocketRef.current) {
+            webSocketRef.current.close();
+            webSocketRef.current = null;
+        }
+        setGameState(initialState);
+        navigate('/');
+    }, [navigate]);
+    
+    const connect = useCallback((roomId: string, playerName: string) => {
+        if (webSocketRef.current && webSocketRef.current.readyState !== WebSocket.CLOSED) {
+            console.log("WebSocket is already connecting or open.");
+            return;
+        }
 
-  const disconnect = () => {
-    websocket.current?.close();
-  };
+        setGameState({ ...initialState, playerName });
 
-  const sendMessage = (type: string, payload: object = {}) => {
-    if (websocket.current?.readyState === WebSocket.OPEN) {
-      const message = JSON.stringify({ type, payload });
-      websocket.current.send(message);
-    }
-  };
+        const ws = new WebSocket(GAME_SERVER_URL);
+        webSocketRef.current = ws;
 
-  const value = { gameState, connect, disconnect, sendMessage };
+        ws.onopen = () => {
+            console.log('WebSocket connection established. Sending join_room message.');
+            sendMessage('join_room', { room_id: roomId, player_name: playerName });
+        };
 
-  return <GameContext.Provider value={value}>{children}</GameContext.Provider>;
+        ws.onmessage = handleServerMessage;
+
+        ws.onerror = (error) => {
+            console.error('WebSocket error:', error);
+            webSocketRef.current = null;
+            disconnect();
+        };
+
+        ws.onclose = (event) => {
+            console.log('WebSocket connection closed.', event.reason);
+            disconnect();
+        };
+    }, [sendMessage, handleServerMessage, disconnect]);
+
+    useEffect(() => {
+        if (gameState.gameState === 'IN_GAME' && gameState.roomId) {
+            if (!window.location.pathname.startsWith(`/game/${gameState.roomId}`)) {
+                 navigate(`/game/${gameState.roomId}`);
+            }
+        }
+    }, [gameState.gameState, gameState.roomId, navigate]);
+
+    const value = { gameState, connect, disconnect, sendMessage };
+
+    return <GameContext.Provider value={value}>{children}</GameContext.Provider>;
 };
 
-// Custom hook to use the GameContext
 export const useGame = () => {
-  const context = useContext(GameContext);
-  if (context === undefined) {
-    throw new Error('useGame must be used within a GameProvider');
-  }
-  return context;
+    const context = useContext(GameContext);
+    if (context === undefined) {
+        throw new Error('useGame must be used within a GameProvider');
+    }
+    return context;
 };

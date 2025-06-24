@@ -4,30 +4,37 @@ import { Toaster, toaster } from "@/components/ui/toaster";
 import { FaUserCircle, FaCrown } from "react-icons/fa";
 import { useGame } from "@/contexts/GameContext";
 import { useEffect, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom"; 
+import { useParams, useNavigate } from "react-router-dom";
 import Header from "./Header";
 
 export default function Lobby() {
     const { gameState, connect, sendMessage } = useGame();
-    const { players, playerName } = gameState;
-    const { roomId: roomIdFromParams } = useParams<{ roomId: string }>(); // Get roomId from URL
+    const { players, playerName, roomId } = gameState;
+    const { roomId: roomIdFromParams } = useParams<{ roomId: string }>();
     const navigate = useNavigate();
 
     const hasToastBeenShown = useRef(false);
+    const hasConnected = useRef(false);
 
     const isHost = players.find(p => p.name === playerName)?.isHost || false;
 
-    // This effect handles joining a lobby directly via a shared link
+    // Effect to handle navigation and connection logic
     useEffect(() => {
-        // If we have a room ID from the URL but are not yet connected, connect now.
-        if (roomIdFromParams && !gameState.roomId) {
-            const randomPlayerName = `Guest-${Math.floor(1000 + Math.random() * 9000)}`;
-            console.log(`Attempting to auto-join room '${roomIdFromParams}' as '${randomPlayerName}'`);
-            connect(roomIdFromParams, randomPlayerName);
+        // If the URL has no room ID, something is wrong. Go home.
+        if (!roomIdFromParams) {
+            navigate('/');
+            return;
         }
-    }, [roomIdFromParams, gameState.roomId, connect]);
+        
+        // If we have a room ID in the URL, but we aren't connected and haven't tried yet, connect now.
+        if (roomIdFromParams && !roomId && !hasConnected.current) {
+            const nameToUse = `Guest-${Math.floor(1000 + Math.random() * 9000)}`;
+            console.log(`Attempting to auto-join room '${roomIdFromParams}' as '${nameToUse}'`);
+            hasConnected.current = true; // Mark that we've initiated a connection attempt
+            connect(roomIdFromParams, nameToUse);
+        }
+    }, [roomIdFromParams, roomId, connect, navigate]);
 
-    // This effect is for showing the "Joined" toast. It now triggers when a player name is confirmed.
     useEffect(() => {
         if (gameState.roomId && gameState.playerName && !hasToastBeenShown.current) {
             toaster.create({
@@ -38,22 +45,14 @@ export default function Lobby() {
             });
             hasToastBeenShown.current = true;
         }
-    }, [gameState.roomId, gameState.playerName]);
+    }, [roomId]);
+
 
     const handleStartGame = () => {
         sendMessage("start_game");
     };
 
-    // If there's no room ID in the URL, we can't be in a lobby. Go home.
-    if (!roomIdFromParams) {
-        useEffect(() => {
-            navigate('/');
-        }, [navigate]);
-        return null;
-    }
-
-    // While connecting, show a loading state until we have a player name.
-    if (!gameState.playerName) {
+    if (!roomId) {
         return (
             <Box>
                 <Header />
@@ -66,7 +65,7 @@ export default function Lobby() {
         <Box>
             <Header />
             <Box textAlign="center" p={8} borderWidth={1} borderRadius="lg" boxShadow="xl" bg="gray.700" minW="600px">
-                <Toaster />
+            <Toaster />
                 <VStack gap={4}>
                     <Heading color="orange.300">Lobby</Heading>
                     <HStack>
@@ -91,7 +90,7 @@ export default function Lobby() {
                     </Grid>
                     {isHost ? (
                         <Button colorScheme="green" size="lg" width="50%" onClick={handleStartGame} disabled={players.length < 1}>
-                            Start Game ({players.length}/{12})
+                            Start Game ({players.length}/{GAME_CONFIG.MAX_PLAYERS})
                         </Button>
                     ) : (
                         <Text color="gray.300" mt={8}>Waiting for the host to start the game...</Text>
@@ -101,3 +100,8 @@ export default function Lobby() {
         </Box>
     );
 }
+
+// A simple placeholder for the game config constant
+const GAME_CONFIG = {
+    MAX_PLAYERS: 12
+};

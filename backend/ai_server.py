@@ -5,11 +5,10 @@ import io
 import os
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel # NEW: For creating the request body model
-from diffusers import DiffusionPipeline, DDIMScheduler
+from pydantic import BaseModel
+from diffusers import DiffusionPipeline
 
 from sentence_transformers import SentenceTransformer, util
-from huggingface_hub import hf_hub_download
 
 # --- 1. Server and Model Setup ---
 
@@ -21,33 +20,28 @@ class ScoringRequest(BaseModel):
 
 
 print("Loading model... This may take a moment.")
-if torch.backends.mps.is_available():
-    device = torch.device("mps")
-    torch_dtype = torch.float16 
-    print("Using MPS (Apple Silicon GPU) with float16 precision for stability.")
-    variant = "fp16"
-else:
-    device = torch.device("cpu")
-    torch_dtype = torch.float32
-    print("MPS not available, using CPU with float32 precision.")
-    variant = "fp32"
+# if torch.backends.mps.is_available():
+#     device = torch.device("mps")
+#     torch_dtype = torch.float16 
+#     print("Using MPS (Apple Silicon GPU) with float16 precision for stability.")
+#     variant = "fp16"
+# else:
+#     device = torch.device("cpu")
+#     torch_dtype = torch.float32
+#     print("MPS not available, using CPU with float32 precision.")
+#     variant = "fp32"
+
+device = torch.device("cuda")
+torch_dtype = torch.bfloat16
+variant = "fp16"
 
 pipeline = DiffusionPipeline.from_pretrained(
-    "stable-diffusion-v1-5/stable-diffusion-v1-5", 
+    "stabilityai/sdxl-turbo", 
     torch_dtype=torch_dtype,
     variant=variant,
     use_safetensors=True,
 ).to(device)
 
-
-print("Loading and fusing LoRA for SDv1.5...")
-repo_name = "ByteDance/Hyper-SD"
-ckpt_name = "Hyper-SD15-8steps-lora.safetensors"
-pipeline.load_lora_weights(hf_hub_download(repo_name, ckpt_name))
-pipeline.fuse_lora()
-
-pipeline.scheduler = DDIMScheduler.from_config(pipeline.scheduler.config, timestep_spacing="trailing")
-print("LoRA for SDv1.5 fused successfully.")
 
 print("Loading similarity scoring model...")
 similarity_model = SentenceTransformer('all-MiniLM-L6-v2', device=device)
@@ -125,7 +119,7 @@ async def websocket_endpoint(websocket: WebSocket):
             await asyncio.to_thread(
                 pipeline,
                 prompt=prompt,
-                num_inference_steps=8,
+                num_inference_steps=4,
                 guidance_scale=0.0,
                 callback_on_step_end_steps=1,
                 callback_on_step_end=stream_intermediate_image,
